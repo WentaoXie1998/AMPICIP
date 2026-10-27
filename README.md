@@ -11,35 +11,16 @@ This repository contains the implementation of AMPICIP, a drug–target affinity
 AMPICIP consists of four main components:
 
 1. **AMPIS (Adaptive Multi-Pocket Induced Subgraph)** — constructs compact, potentially multi-pocket target subgraphs from residue-level binding-site probabilities and the residue-contact graph.
-2. **DUCGA (Dual Unidirectional Cross-Graph Attention)** — models fine-grained cross-graph interactions between drug atoms and target residues.
+2. **DUCGA (Dual Unidirectional Cross-Graph Attention)** — models fine-grained cross-graph interactions between drug atoms and target residues through two opposite unidirectional attention paths.
 3. **CIP (Cross-Injected Propagation)** — propagates cross-injected atom and residue representations along the original drug chemical-bond and target residue-contact topologies.
 4. **GGTF (Global-Guided Target Fusion)** — complements the AMPIS-derived local target representation with an ESM2-derived global target representation through gated residual fusion.
-
-The overall pipeline is:
-
-```text
-Drug SMILES -----------------> Drug atom graph --------\
-                                                       \
-                                                        DUCGA -> CIP -> Drug representation
-                                                       /
-Target structure + LABind --> AMPIS residue graph ----/
-
-Target sequence --> ESM2 global representation --> GGTF
-                                                  |
-                                                  v
-                                   Final target representation
-                                                  |
-                       Drug + target representations
-                                                  |
-                                                  v
-                                      Affinity prediction
-```
 
 ## Repository Structure
 
 ```text
 AMPICIP/
 ├── layers.py
+├── losses.py
 ├── metrics.py
 ├── model.py
 ├── precompute_esm2.py
@@ -48,12 +29,13 @@ AMPICIP/
 ├── single_mol_atom_graph.py
 ├── train.py
 ├── train_coldstart.py
-├── losses.py                  # required by the training scripts
 ├── hu122-DPI.yml
-├── dataset.zip
-├── splits.zip
+├── .gitignore
 └── README.md
 ```
+
+Large reproducibility data are distributed through the
+[GitHub Releases page](https://github.com/WentaoXie1998/AMPICIP/releases/latest).
 
 ### Code files
 
@@ -66,20 +48,45 @@ AMPICIP/
 | `precompute_residue_global.py` | Precomputes full target residue-contact graphs, residue distance matrices, and residue feature matrices for efficient AMPIS construction during training. |
 | `precompute_esm2.py` | Precomputes ESM2-based global target representations so that ESM2 does not need to be executed repeatedly during DTA training. |
 | `metrics.py` | Implements regression evaluation metrics, including MSE, concordance index (CI), Spearman correlation, and Pearson correlation. |
+| `losses.py` | Implements the MSE objective and the HSIC auxiliary regularization used during AMPICIP training. |
 | `train.py` | Main training script for the **warm-start** setting. It performs 5-fold training/evaluation using the predefined warm-start splits. |
 | `train_coldstart.py` | Main training script for **drug cold-start** and **target cold-start** settings. It uses predefined entity-level splits and checks for entity leakage between training/validation/test sets. |
-| `losses.py` | Implements the MSE objective and the HSIC auxiliary regularization used during AMPICIP training. |
 | `hu122-DPI.yml` | Conda environment specification used for the experiments. |
 
-## Data
+## Data and Predefined Splits
 
-Two archives are provided.
+Because the processed datasets and predefined split archives exceed GitHub's
+regular repository file-size limits, they are provided as multi-volume 7-Zip
+archives in the latest GitHub Release:
 
-### `dataset.zip`
+**Download:**  
+https://github.com/WentaoXie1998/AMPICIP/releases/latest
 
-Contains the processed Davis and KIBA data and target-side resources used by AMPICIP.
+The current data release is tagged **`v1.0.0-data`**.
 
-After extraction, the expected layout is approximately:
+### Dataset
+
+Download all dataset volumes into the same directory:
+
+```text
+dataset.7z.001
+dataset.7z.002
+dataset.7z.003
+```
+
+Reconstruct the original archive with 7-Zip:
+
+```bash
+7z x dataset.7z.001
+```
+
+This produces `dataset.zip`. Extract it in the repository root:
+
+```bash
+7z x dataset.zip
+```
+
+The expected layout is approximately:
 
 ```text
 dataset/
@@ -97,9 +104,31 @@ dataset/
 
 `RESULT_all.csv` contains the residue-level binding-site probabilities used by AMPIS.
 
-### `splits.zip`
+### Predefined 5-fold splits
 
-Contains the predefined 5-fold splits used in the experiments.
+Download all split volumes into the same directory:
+
+```text
+splits.7z.001
+splits.7z.002
+splits.7z.003
+splits.7z.004
+```
+
+Reconstruct the original archive:
+
+```bash
+7z x splits.7z.001
+```
+
+This produces `splits.zip`. Extract it in the repository root:
+
+```bash
+7z x splits.zip
+```
+
+The extracted split directory contains the predefined 5-fold partitions used
+for warm-start, drug cold-start, and target cold-start experiments:
 
 ```text
 splits/
@@ -117,7 +146,7 @@ Each fold directory contains `split_train.csv`, `split_val.csv`, and `split_test
 
 ## Environment Setup
 
-The experiments were run with Python 3.9, PyTorch 2.5.1, PyTorch Geometric 2.6.1, RDKit, ESM2, and CUDA 12.1-compatible packages.
+The experimental environment is provided in `hu122-DPI.yml`.
 
 Create the Conda environment with:
 
@@ -126,44 +155,47 @@ conda env create -f hu122-DPI.yml
 conda activate hu122-DPI
 ```
 
-For portability across machines, remove the machine-specific `prefix:` line at the end of `hu122-DPI.yml` before recreating the environment on another system.
+For better portability across machines, remove the machine-specific `prefix:`
+line at the end of `hu122-DPI.yml` if necessary before recreating the
+environment on another system.
 
 ## Preparation
 
-### 1. Extract the data
+After downloading and extracting the release assets, the repository root
+should contain the extracted `dataset/` and `splits/` directories.
 
-Extract both archives in the repository root:
+### Optional: precompute residue-side structural information
 
-```text
-dataset.zip -> ./dataset/
-splits.zip  -> ./splits/
-```
-
-### 2. Precompute residue-side structural information
-
-`precompute_residue_global.py` precomputes the complete residue-contact graph, residue features, and distance matrix used during AMPIS construction.
+`precompute_residue_global.py` precomputes the complete residue-contact graph,
+residue features, and distance matrix used during AMPIS construction.
 
 ```bash
 python precompute_residue_global.py
 ```
 
-The current script contains dataset-specific paths near the beginning of the file. Check that they point to the dataset you want to process before running it.
+Check the dataset-specific paths near the beginning of the script before
+running it. The generated files are stored under `precomp_residue/davis/` or
+`precomp_residue/kiba/`, depending on the selected dataset.
 
-The generated files are stored under `precomp_residue/davis/` or `precomp_residue/kiba/`, depending on the selected dataset.
+### Optional: precompute ESM2 target representations
 
-### 3. Precompute ESM2 target representations
-
-If ESM2 representations are not already included in the extracted dataset, run:
+If ESM2 representations need to be regenerated, run:
 
 ```bash
 python precompute_esm2.py
 ```
 
-The resulting per-target representations should be placed under `dataset/davis/Esm2/` and/or `dataset/kiba/Esm2/`.
+The resulting per-target representations should be placed under:
+
+```text
+dataset/davis/Esm2/
+dataset/kiba/Esm2/
+```
 
 ## Training
 
-The dataset and experimental setting are selected inside the training scripts rather than through command-line arguments.
+The dataset and experimental setting are selected inside the training scripts
+rather than through command-line arguments.
 
 ### Warm-start
 
@@ -192,13 +224,13 @@ Select the dataset:
 ACTIVE_DATASET = "davis"   # or "kiba"
 ```
 
-and choose the desired setting, for example:
+and choose the desired cold-start setting, for example:
 
 ```python
 EXPERIMENT_SETTING = "drug_coldstart_sampleval"
 ```
 
-or
+or:
 
 ```python
 EXPERIMENT_SETTING = "target_coldstart_sampleval"
@@ -212,17 +244,18 @@ Then run:
 python train_coldstart.py
 ```
 
-The cold-start script checks that held-out drug or target entities do not leak into the training/test or validation/test partitions.
+The cold-start script checks that held-out drug or target entities do not leak
+into the training/test or validation/test partitions.
 
 ## Training Outputs
 
-Outputs are written under:
+Training outputs are written under:
 
 ```text
 checkpoints_kfold/
 ```
 
-Each fold stores files such as:
+For each fold, the script saves files such as:
 
 ```text
 fold1/
@@ -234,8 +267,6 @@ fold1/
 ├── split_val.csv
 └── split_test.csv
 ```
-
-Training uses AdamW optimization, warmup followed by cosine learning-rate decay, early stopping based on validation MSE, MSE as the main objective, an HSIC-based auxiliary regularization term, and automatic mixed precision when CUDA is available.
 
 ## Evaluation Metrics
 
@@ -250,12 +281,13 @@ The main manuscript reports MSE, Pearson correlation, and CI for the benchmark e
 
 ## Notes on Reproducibility
 
-- Use the supplied `splits.zip` to reproduce the reported 5-fold experiments.
+- Download the data and predefined splits from the [GitHub Releases page](https://github.com/WentaoXie1998/AMPICIP/releases/latest).
+- Download **all volumes** of an archive before extraction.
+- Use the supplied predefined splits to reproduce the reported 5-fold experiments.
 - Run `train.py` for warm-start experiments.
 - Run `train_coldstart.py` for drug and target cold-start experiments.
 - AMPIS requires residue-level binding-site probabilities and target structural information.
 - GGTF uses precomputed ESM2 representations as global target context.
-- The training scripts import `losses.py`; make sure this file is included in the repository.
 - Check dataset-selection variables at the beginning of preprocessing and training scripts before execution.
 
 ## Citation
